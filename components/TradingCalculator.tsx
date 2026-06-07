@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { TrendingUp, TrendingDown, Copy, Check, RotateCcw, Plus, X, Calculator, AlertCircle, HelpCircle, Percent, Coins, ShieldCheck, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Copy, Check, RotateCcw, Plus, X, Calculator, AlertCircle, HelpCircle, Coins } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatIDR, formatPercent, formatDecimal } from "@/lib/utils";
-import { PositionType, CalculatorInputs, CalculatorResults, TakeProfitTarget } from "@/types";
+import { formatCurrency, formatPercent, formatDecimal } from "@/lib/utils";
+import { CalculatorResults, TakeProfitTarget } from "@/types";
 
 // Schema for form validation
 const formSchema = z.object({
   position: z.enum(["LONG", "SHORT"]),
+  currency: z.enum(["IDR", "USDT"]),
   accountBalance: z.number({ message: "Harus berupa angka" }).positive("Modal harus lebih besar dari 0"),
   riskPercentage: z.number({ message: "Harus berupa angka" }).positive("Risk harus lebih besar dari 0%").max(100, "Risk tidak boleh melebihi 100%"),
   entryPrice: z.number({ message: "Harus berupa angka" }).positive("Entry price harus lebih besar dari 0"),
@@ -35,6 +36,7 @@ export default function TradingCalculator() {
 
   const defaultValues: FormValues = {
     position: "LONG",
+    currency: "IDR",
     accountBalance: 0,
     riskPercentage: 0,
     entryPrice: 0,
@@ -44,7 +46,6 @@ export default function TradingCalculator() {
 
   const {
     register,
-    handleSubmit,
     setValue,
     reset,
     control,
@@ -58,6 +59,7 @@ export default function TradingCalculator() {
   // Watch form values for real-time calculations
   const formValues = useWatch({ control });
   const position = formValues.position || "LONG";
+  const currency = formValues.currency || "IDR";
   const accountBalance = formValues.accountBalance ?? 0;
   const riskPercentage = formValues.riskPercentage ?? 0;
   const entryPrice = formValues.entryPrice ?? 0;
@@ -65,21 +67,14 @@ export default function TradingCalculator() {
   const leverage = formValues.leverage ?? 0;
 
   // Custom position-based validation logic
-  const [positionError, setPositionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (entryPrice > 0 && stopLoss > 0) {
-      if (position === "LONG" && stopLoss >= entryPrice) {
-        setPositionError("Stop Loss harus lebih kecil dari Entry");
-      } else if (position === "SHORT" && stopLoss <= entryPrice) {
-        setPositionError("Stop Loss harus lebih besar dari Entry");
-      } else {
-        setPositionError(null);
-      }
-    } else {
-      setPositionError(null);
+  let positionError: string | null = null;
+  if (entryPrice > 0 && stopLoss > 0) {
+    if (position === "LONG" && stopLoss >= entryPrice) {
+      positionError = "Stop Loss harus lebih kecil dari Entry";
+    } else if (position === "SHORT" && stopLoss <= entryPrice) {
+      positionError = "Stop Loss harus lebih besar dari Entry";
     }
-  }, [position, entryPrice, stopLoss]);
+  }
 
   // Perform trading calculations
   const calculateResults = (): CalculatorResults | null => {
@@ -169,19 +164,19 @@ export default function TradingCalculator() {
     setRrTargets([1, 1.5, 2, 3, 5]);
     setCustomRr("");
     setCustomRrError("");
-    setPositionError(null);
   };
 
   // Copy Results to Clipboard
   const handleCopyClipboard = () => {
     if (!results) return;
 
-    const rrText = results.takeProfits.map((tp) => `- RR ${tp.rr}x (${tp.rating} RR) | TP Price: ${formatDecimal(tp.price)} | Est. Profit: ${formatIDR(tp.profit)}`).join("\n");
+    const rrText = results.takeProfits.map((tp) => `- RR ${tp.rr}x (${tp.rating} RR) | TP Price: ${formatDecimal(tp.price)} | Est. Profit: ${formatCurrency(tp.profit, currency)}`).join("\n");
 
     const text = `--- TRADING RISK CALCULATOR SUMMARY ---
 Posisi: ${position}
-Account Balance: ${formatIDR(accountBalance)}
-Risk Per Trade: ${riskPercentage}% (${formatIDR(results.riskMoney)})
+Mata Uang: ${currency}
+Account Balance: ${formatCurrency(accountBalance, currency)}
+Risk Per Trade: ${riskPercentage}% (${formatCurrency(results.riskMoney, currency)})
 Leverage: ${leverage}x
 
 [INFO INFO TRANSAKSI]
@@ -190,8 +185,8 @@ Stop Loss: ${formatDecimal(stopLoss)}
 Jarak Stop Loss: ${formatDecimal(results.riskDistance)} (${formatPercent(results.stopLossPercentage)})
 
 [UKURAN POSISI & MARGIN]
-Position Size: ${formatIDR(results.positionSize)}
-Required Margin (Modal Terpakai): ${formatIDR(results.requiredMargin)}
+Position Size: ${formatCurrency(results.positionSize, currency)}
+Required Margin (Modal Terpakai): ${formatCurrency(results.requiredMargin, currency)}
 
 [TARGET TAKE PROFIT]
 ${rrText}
@@ -220,28 +215,52 @@ ${rrText}
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            {/* Position Selector: LONG or SHORT */}
-            <div className="space-y-2">
-              <Label>Arah Posisi</Label>
-              <div className="grid grid-cols-2 gap-2 bg-[#12161a] p-1 rounded-xl border border-neutral-800">
-                <Button
-                  type="button"
-                  variant={position === "LONG" ? "long" : "ghost"}
-                  className="rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all"
-                  onClick={() => setValue("position", "LONG")}
-                >
-                  <TrendingUp className="h-4 w-4" />
-                  <span>LONG / BELI</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant={position === "SHORT" ? "short" : "ghost"}
-                  className="rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all text-neutral-300"
-                  onClick={() => setValue("position", "SHORT")}
-                >
-                  <TrendingDown className="h-4 w-4" />
-                  <span>SHORT / JUAL</span>
-                </Button>
+            {/* Position & Currency Selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Arah Posisi</Label>
+                <div className="grid grid-cols-2 gap-2 bg-[#12161a] p-1 rounded-xl border border-neutral-800">
+                  <Button
+                    type="button"
+                    variant={position === "LONG" ? "long" : "ghost"}
+                    className="rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all"
+                    onClick={() => setValue("position", "LONG")}
+                  >
+                    <TrendingUp className="h-4 w-4" />
+                    <span>LONG / BELI</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={position === "SHORT" ? "short" : "ghost"}
+                    className="rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all text-neutral-300"
+                    onClick={() => setValue("position", "SHORT")}
+                  >
+                    <TrendingDown className="h-4 w-4" />
+                    <span>SHORT / JUAL</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mata Uang</Label>
+                <div className="grid grid-cols-2 gap-2 bg-[#12161a] p-1 rounded-xl border border-neutral-800">
+                  <Button
+                    type="button"
+                    variant={currency === "IDR" ? "default" : "ghost"}
+                    className={`rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all ${currency === "IDR" ? "bg-amber-500 text-black hover:bg-amber-600" : "text-neutral-300"}`}
+                    onClick={() => setValue("currency", "IDR")}
+                  >
+                    <span>IDR</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={currency === "USDT" ? "default" : "ghost"}
+                    className={`rounded-lg h-9 font-bold flex items-center justify-center space-x-1.5 transition-all ${currency === "USDT" ? "bg-[#26a17b] text-white hover:bg-[#1f8766]" : "text-neutral-300"}`}
+                    onClick={() => setValue("currency", "USDT")}
+                  >
+                    <span>USDT</span>
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -252,7 +271,7 @@ ${rrText}
                 <Input
                   id="accountBalance"
                   type="number"
-                  prefixText="Rp"
+                  prefixText={currency === "IDR" ? "Rp" : "$"}
                   {...register("accountBalance", { valueAsNumber: true })}
                 />
                 {errors.accountBalance && (
@@ -335,7 +354,7 @@ ${rrText}
                 )}
                 {positionError && (
                   <p className="text-xs text-rose-500 flex items-center mt-1 font-semibold animate-pulse">
-                    <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                    <AlertCircle className="h-3.5 w-3.5 mr-1 shrink-0" />
                     {positionError}
                   </p>
                 )}
@@ -506,7 +525,7 @@ ${rrText}
                 <CardContent className="space-y-3.5 py-4">
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-400">Modal Akun</span>
-                    <span className="text-sm font-bold text-white">{formatIDR(accountBalance)}</span>
+                    <span className="text-sm font-bold text-white">{formatCurrency(accountBalance, currency)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-400">Persentase Risiko</span>
@@ -514,7 +533,7 @@ ${rrText}
                   </div>
                   <div className="flex justify-between items-center border-t border-neutral-800/80 pt-3">
                     <span className="text-xs text-neutral-400 font-semibold">Uang Risiko (Risk Money)</span>
-                    <span className="text-base font-black text-rose-400">{formatIDR(results.riskMoney)}</span>
+                    <span className="text-base font-black text-rose-400">{formatCurrency(results.riskMoney, currency)}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -528,7 +547,7 @@ ${rrText}
                 <CardContent className="space-y-3.5 py-4">
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-400">Ukuran Posisi (Size)</span>
-                    <span className="text-sm font-bold text-white">{formatIDR(results.positionSize)}</span>
+                    <span className="text-sm font-bold text-white">{formatCurrency(results.positionSize, currency)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-neutral-400">Leverage</span>
@@ -536,7 +555,7 @@ ${rrText}
                   </div>
                   <div className="flex justify-between items-center border-t border-neutral-800/80 pt-3">
                     <span className="text-xs text-neutral-400 font-semibold">Margin yang Dibutuhkan</span>
-                    <span className="text-base font-black text-[#0ecb81]">{formatIDR(results.requiredMargin)}</span>
+                    <span className="text-base font-black text-[#0ecb81]">{formatCurrency(results.requiredMargin, currency)}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -600,7 +619,7 @@ ${rrText}
                       >
                         <TableCell className="pl-6 font-bold text-white">{tp.rr}x</TableCell>
                         <TableCell className="font-semibold text-neutral-100">{formatDecimal(tp.price)}</TableCell>
-                        <TableCell className="font-bold text-[#0ecb81]">+{formatIDR(tp.profit)}</TableCell>
+                        <TableCell className="font-bold text-[#0ecb81]">+{formatCurrency(tp.profit, currency)}</TableCell>
                         <TableCell className="pr-6 text-right">
                           {tp.rating === "Excellent" && <Badge variant="success">Excellent RR</Badge>}
                           {tp.rating === "Good" && <Badge variant="warning">Good RR</Badge>}
